@@ -61,7 +61,7 @@ while True:
         break
     else:
         print("任务仍在进行中，5秒后重试...")
-        time.sleep(5)  # 每隔5秒检查一次
+        time.sleep(50)  # 每隔50秒检查一次
 
 # 下载模型文件（可选）
 if status == "SUCCEEDED":
