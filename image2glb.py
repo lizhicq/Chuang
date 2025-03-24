@@ -49,8 +49,8 @@ try:
             print(f"任务失败或过期: {status}")
             break
         else:
-            print("任务仍在进行中，5秒后重试...")
-            time.sleep(5)
+            print("任务仍在进行中，200秒后重试...")
+            time.sleep(200)
 
     # 下载生成的模型
     if status == "SUCCEEDED":

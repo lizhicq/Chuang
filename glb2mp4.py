@@ -4,7 +4,7 @@ import numpy as np
 import imageio
 from PIL import Image
 
-def render_model(model_path="texture_output_model.glb", texture_path=None):
+def render_model(model_path="texture_output_model.glb"):
     # 加载 GLB 文件
     glb_file = model_path  # GLB 文件路径
     scene = trimesh.load(glb_file)
@@ -15,28 +15,6 @@ def render_model(model_path="texture_output_model.glb", texture_path=None):
     model_center = (bounding_box[0] + bounding_box[1]) / 2  # 模型中心
     model_size = np.linalg.norm(bounding_box[1] - bounding_box[0])  # 模型对角线长度
     radius = model_size * 1.5  # 相机距离设置为模型大小的 1.5 倍
-
-    # 为模型添加材质
-    for geom_name, geom in scene.geometry.items():
-        if texture_path:
-            # 加载纹理图像
-            texture_image = np.array(Image.open(texture_path))
-            texture = pyrender.Texture(source=texture_image)
-            material = pyrender.MetallicRoughnessMaterial(
-                metallicFactor=0.0,
-                roughnessFactor=0.5,
-                baseColorTexture=texture  # 使用纹理作为基础颜色
-            )
-        else:
-            # 默认使用单一颜色（例如红色）
-            material = pyrender.MetallicRoughnessMaterial(
-                metallicFactor=0.0,
-                roughnessFactor=0.5,
-                baseColorFactor=[1.0, 0.0, 0.0, 1.0]  # 红色
-            )
-        # 将几何体转换为 pyrender 的 Mesh 并应用材质
-        mesh = pyrender.Mesh.from_trimesh(geom, material=material)
-        pyrender_scene.add(mesh)
 
     # 设置相机
     camera = pyrender.PerspectiveCamera(yfov=np.pi / 3.0, aspectRatio=1920/1080)
@@ -90,6 +68,6 @@ def render_model(model_path="texture_output_model.glb", texture_path=None):
 
 if __name__ == "__main__":
     # 示例调用：使用纹理图像
-    render_model("model/moster_mask_red.glb")  # 替换为你的纹理路径
+    render_model("/Users/lizhicq/GitHub/Chuang/model/model_from_local_image.glb")  # 替换为你的纹理路径
     # 示例调用：无纹理，默认红色
     # render_model("model/moster_mask_red.glb")
