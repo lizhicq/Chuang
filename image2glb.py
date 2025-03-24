@@ -1,23 +1,38 @@
 import requests
 import time
 import os
+import base64
 
-# 设置 API Key（从环境变量读取或直接填写）
+# 设置 API Key
 MESHY_API_KEY = os.getenv("MESHY_API_KEY") or "your_api_key_here"
 headers = {
     "Authorization": f"Bearer {MESHY_API_KEY}",
     "Content-Type": "application/json"
 }
 
-# 指定图片 URL（IKEA 竹碗的公开 URL）
-image_url = "https://www.ikea.com/eg/en/images/products/blanda-matt-serving-bowl-bamboo__0711988_pe728640_s5.jpg"
+# 本地图片路径
+local_image_path = "model/WechatIMG25.jpg"  # 替换为你的本地图片路径
+
+# 检查文件是否存在
+if not os.path.exists(local_image_path):
+    print(f"错误：文件 {local_image_path} 不存在")
+    exit()
+
+# 将本地图片转换为 Base64 Data URI
+def image_to_base64(image_path):
+    with open(image_path, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+        mime_type = "image/jpeg" if image_path.lower().endswith((".jpg", ".jpeg")) else "image/png"
+        return f"data:{mime_type};base64,{encoded_string}"
+
+image_url = image_to_base64(local_image_path)
 
 # Image-to-3D 请求 payload
 payload = {
-    "image_url": image_url,  # 使用公开可访问的图片 URL
-    "enable_pbr": True,      # 启用 PBR 材质（更真实的纹理）
-    "should_remesh": True,   # 重建网格以优化模型
-    "should_texture": True   # 自动生成纹理
+    "image_url": image_url,  # 使用 Base64 Data URI
+    "enable_pbr": False,
+    "should_remesh": False,
+    "should_texture": False
 }
 
 # 发送 Image-to-3D 请求
@@ -42,23 +57,23 @@ try:
 
         if status == "SUCCEEDED":
             print("任务完成！")
-            model_url = task_data["model_urls"]["glb"]  # 获取 glb 格式模型
+            model_url = task_data["model_urls"]["glb"]
             print(f"模型下载链接: {model_url}")
             break
         elif status in ["FAILED", "EXPIRED"]:
             print(f"任务失败或过期: {status}")
             break
         else:
-            print("任务仍在进行中，200秒后重试...")
-            time.sleep(200)
+            print("任务仍在进行中，20秒后重试...")
+            time.sleep(20)
 
     # 下载生成的模型
     if status == "SUCCEEDED":
         model_response = requests.get(model_url)
         model_response.raise_for_status()
-        with open("bamboo_bowl_from_image.glb", "wb") as f:
+        with open("model_from_local_image.glb", "wb") as f:
             f.write(model_response.content)
-        print("模型已下载至 bamboo_bowl_from_image.glb")
+        print("模型已下载至 model_from_local_image.glb")
 
 except requests.exceptions.RequestException as e:
     print(f"请求失败: {e}")

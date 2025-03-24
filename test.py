@@ -1,81 +1,100 @@
-import requests
-import time
-import os
-import base64
+import pyrender
+import trimesh
+import numpy as np
+import imageio
+from PIL import Image
 
-# 设置 API Key
-MESHY_API_KEY = os.getenv("MESHY_API_KEY") or "your_api_key_here"
-headers = {
-    "Authorization": f"Bearer {MESHY_API_KEY}",
-    "Content-Type": "application/json"
-}
+def render_model(model_path="texture_output_model.glb"):
+    # 加载 GLB 文件
+    glb_file = model_path
+    scene = trimesh.load(glb_file)
+    pyrender_scene = pyrender.Scene.from_trimesh_scene(scene, ambient_light=[0.3, 0.3, 0.3])  # 添加环境光
 
-# 本地图片路径
-local_image_path = "model/WechatIMG25.jpg"  # 替换为你的本地图片路径
+    # 获取模型的边界框，计算中心和大小
+    bounding_box = scene.bounds
+    model_center = (bounding_box[0] + bounding_box[1]) / 2
+    model_size = np.linalg.norm(bounding_box[1] - bounding_box[0])
+    radius = model_size * 1.5
 
-# 检查文件是否存在
-if not os.path.exists(local_image_path):
-    print(f"错误：文件 {local_image_path} 不存在")
-    exit()
+    # 设置相机
+    camera = pyrender.PerspectiveCamera(yfov=np.pi / 3.0, aspectRatio=1920/1080)
+    camera_node = pyrender.Node(camera=camera, matrix=np.eye(4))
+    pyrender_scene.add_node(camera_node)
 
-# 将本地图片转换为 Base64 Data URI
-def image_to_base64(image_path):
-    with open(image_path, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-        mime_type = "image/jpeg" if image_path.lower().endswith((".jpg", ".jpeg")) else "image/png"
-        return f"data:{mime_type};base64,{encoded_string}"
+    # 添加多个光源以增强亮度
+    # 主点光源（跟随相机）
+    light1 = pyrender.PointLight(color=[1.0, 1.0, 1.0], intensity=8.0)  # 提高强度
+    light_node1 = pyrender.Node(light=light1, matrix=np.eye(4))
+    pyrender_scene.add_node(light_node1)
+    
+    # 辅助光源（顶部固定）
+    light2 = pyrender.PointLight(color=[1.0, 1.0, 1.0], intensity=5.0)
+    light_node2 = pyrender.Node(light=light2, translation=[0, model_size, 0])
+    pyrender_scene.add_node(light_node2)
+    
+    # 辅助光源（底部固定）
+    light3 = pyrender.PointLight(color=[1.0, 1.0, 1.0], intensity=5.0)
+    light_node3 = pyrender.Node(light=light3, translation=[0, -model_size, 0])
+    pyrender_scene.add_node(light_node3)
 
-image_url = image_to_base64(local_image_path)
+    # 初始化渲染器
+    r = pyrender.OffscreenRenderer(viewport_width=1920, viewport_height=1080)
 
-# Image-to-3D 请求 payload
-payload = {
-    "image_url": image_url,  # 使用 Base64 Data URI
-    "enable_pbr": True,
-    "should_remesh": True,
-    "should_texture": True
-}
+    # 生成旋转动画帧（增加上下环绕）
+    frames = []
+    num_frames = 120  # 总帧数
+    for i in range(num_frames):
+        # 计算水平和垂直角度
+        horizontal_angle = np.radians((i / num_frames) * 360)  # 水平360度旋转
+        vertical_angle = np.radians(np.sin(np.radians(i * 3)) * 45)  # 上下45度范围内摆动
+        
+        # 更新相机位置（球面坐标系）
+        x = radius * np.cos(vertical_angle) * np.sin(horizontal_angle)
+        y = radius * np.sin(vertical_angle)
+        z = radius * np.cos(vertical_angle) * np.cos(horizontal_angle)
+        
+        camera_pose = np.array([
+            [1, 0, 0, x],
+            [0, 1, 0, y],
+            [0, 0, 1, z],
+            [0, 0, 0, 1]
+        ])
+        
+        # 相机朝向模型中心
+        direction = model_center - np.array([x, y, z])
+        direction = direction / np.linalg.norm(direction)
+        z_axis = -direction  # 相机朝向相反方向
+        x_axis = np.cross([0, 1, 0], z_axis)
+        x_axis = x_axis / np.linalg.norm(x_axis)
+        y_axis = np.cross(z_axis, x_axis)
+        
+        camera_pose[:3, 0] = x_axis
+        camera_pose[:3, 1] = y_axis
+        camera_pose[:3, 2] = z_axis
+        camera_pose[:3, 3] = [x, y, z] + model_center * 0.1
 
-# 发送 Image-to-3D 请求
-try:
-    response = requests.post(
-        "https://api.meshy.ai/openapi/v1/image-to-3d",
-        headers=headers,
-        json=payload
-    )
-    response.raise_for_status()
-    task_id = response.json()["result"]
-    print("Image-to-3D task created. Task ID:", task_id)
+        # 更新主光源位置（跟随相机）
+        light_pose = camera_pose.copy()
+        pyrender_scene.remove_node(light_node1)
+        light_node1 = pyrender.Node(light=light1, matrix=light_pose)
+        pyrender_scene.add_node(light_node1)
 
-    # 轮询任务状态
-    status_url = f"https://api.meshy.ai/openapi/v1/image-to-3d/{task_id}"
-    while True:
-        status_response = requests.get(status_url, headers=headers)
-        status_response.raise_for_status()
-        task_data = status_response.json()
-        status = task_data["status"]
-        print(f"任务状态: {status} | 进度: {task_data.get('progress', 0)}%")
+        # 更新相机节点
+        pyrender_scene.remove_node(camera_node)
+        camera_node = pyrender.Node(camera=camera, matrix=camera_pose)
+        pyrender_scene.add_node(camera_node)
 
-        if status == "SUCCEEDED":
-            print("任务完成！")
-            model_url = task_data["model_urls"]["glb"]
-            print(f"模型下载链接: {model_url}")
-            break
-        elif status in ["FAILED", "EXPIRED"]:
-            print(f"任务失败或过期: {status}")
-            break
-        else:
-            print("任务仍在进行中，20秒后重试...")
-            time.sleep(20)
+        # 渲染当前帧
+        color, _ = r.render(pyrender_scene)
+        frames.append(color)
 
-    # 下载生成的模型
-    if status == "SUCCEEDED":
-        model_response = requests.get(model_url)
-        model_response.raise_for_status()
-        with open("model_from_local_image.glb", "wb") as f:
-            f.write(model_response.content)
-        print("模型已下载至 model_from_local_image.glb")
+    # 保存为视频
+    output_path = model_path.replace('.glb', '_enhanced.mp4')
+    imageio.mimwrite(output_path, frames, format="FFMPEG", fps=24, codec="libx264")
 
-except requests.exceptions.RequestException as e:
-    print(f"请求失败: {e}")
-except KeyError as e:
-    print(f"响应数据解析错误: {e}")
+    # 清理
+    r.delete()
+    print(f"视频生成完成！输出路径: {output_path}")
+
+if __name__ == "__main__":
+    render_model("/Users/lizhicq/GitHub/Chuang/model/model_from_local_image.glb")
