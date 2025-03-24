@@ -17,7 +17,7 @@ headers = {
 
 generate_preview_request = {
     "mode": "preview",
-    "prompt": "a monster mask",
+    "prompt": "a monster mask, with red texture",
     "negative_prompt": "low quality, low resolution, low poly, ugly",
     "art_style": "realistic",
     "should_remesh": True,
@@ -67,6 +67,7 @@ while True:
 if status == "SUCCEEDED":
     model_response = requests.get(model_url)
     model_response.raise_for_status()
-    with open("output_model.glb", "wb") as f:
+    model_name = "moster_mask_red.glb"
+    with open(model_name, "wb") as f:
         f.write(model_response.content)
-    print("模型已下载至 output_model.glb")
+    print(f"模型已下载至{model_name}")
